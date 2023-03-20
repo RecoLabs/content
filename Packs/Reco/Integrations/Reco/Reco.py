@@ -621,7 +621,7 @@ def main() -> None:
             result = add_risky_user_label(reco_client, email_address)
             return_results(result)
         elif command == "reco-get-assets-user-has-access-to":
-            result = get_assets_by_owner(reco_client, demisto.args()["asset_owner"], demisto.args()["only_sensitive"])
+            result = get_assets_by_owner(reco_client, demisto.args()["email_address"], demisto.args()["only_sensitive"])
             return_results(result)
         else:
             raise NotImplementedError(f"{command} is not an existing reco command")
