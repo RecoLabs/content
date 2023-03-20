@@ -491,7 +491,7 @@ def get_assets_user_has_access(reco_client: RecoClient, email_address: str, only
         assets_list.append(asset_as_dict)
     return CommandResults(
         readable_output=tableToMarkdown(
-            "Assets", assets_list, headers=["file_name", "owner", "file_url", "currently_permitted_users", "visibility", "location", "source"]),
+            "Assets", assets_list, headers=["file_name", "file_owner", "file_url", "currently_permitted_users", "visibility", "location", "source"]),
         outputs_prefix="Reco.Assets",
         outputs_key_field="asset_value",
         outputs=assets_list,
@@ -621,7 +621,11 @@ def main() -> None:
             result = add_risky_user_label(reco_client, email_address)
             return_results(result)
         elif command == "reco-get-assets-user-has-access-to":
-            result = get_assets_by_owner(reco_client, demisto.args()["email_address"], demisto.args()["only_sensitive"])
+            args = demisto.args()
+            only_sensitive = args.get("only_sensitive", False)
+            result = get_assets_user_has_access(reco_client,
+                                                args["email_address"],
+                                                only_sensitive)
             return_results(result)
         else:
             raise NotImplementedError(f"{command} is not an existing reco command")
