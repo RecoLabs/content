@@ -20,6 +20,40 @@ def get_projects_in_workspace(wid, client):
     return res
 
 
+def get_tasks_in_project(pid, client, opt_fields=None):
+    """Gets all tasks in a project
+    :type pid: ``str``
+    :param pid: project id in Asana
+
+    :type client: ``asana.Client``
+    :param client: Asana client
+
+    :type opt_fields: ``list``
+    :param opt_fields: list of fields to be returned in the response
+
+    :return: list of tasks in the project
+    :rtype: ``list``
+    """
+    response = []
+    tasks = []
+    if opt_fields is None:
+        tasks = client.tasks.get_tasks_for_project(pid)
+    else:
+        tasks = client.tasks.get_tasks_for_project(pid,
+                                                   opt_fields=opt_fields)
+    for task in tasks:
+        response.append(task)
+
+    outputs_context = {
+        'Tasks': response
+    }
+
+    return CommandResults(
+        outputs=outputs_context,
+        raw_response=response,
+    )
+
+
 def get_all_projects(token):
     """Gets all projects of the user in Asana'
 
@@ -140,6 +174,12 @@ def main():
         elif demisto.command() == 'asana-get-all-projects':
             res = get_all_projects(access_token)
             return_results(res)
+        elif demisto.command() == 'asana-get-tasks-in-project':
+            pid = demisto.args()['project_id']
+            fields = argToList(demisto.args().get('opt_fields', []))
+            res = get_tasks_in_project(pid, get_asana_client(access_token), fields)
+            return_results(res)
+
     except Exception as err:
         return_error(str(err))
 

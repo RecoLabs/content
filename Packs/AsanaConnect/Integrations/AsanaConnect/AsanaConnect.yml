@@ -32,6 +32,15 @@ script:
   - name: asana-get-all-projects
     arguments: []
     description: gets the list of projects on asana
+  - name: asana-get-tasks-in-project
+    arguments:
+    - name: project_id
+      required: true
+      description: id of the project in asana. id can be found in the asana project url. (e.g. https://app.asana.com/0/XXXXXXXXXXX/list)
+    - name: opt_fields
+      required: false
+      description: 'list of opt fields to return for each task. For example: "name, due_at, due_on..."'
+    description: Get the tasks in a project from Asana
   dockerimage: demisto/py3-tools:0.0.1.25751
   subtype: python3
 fromversion: 6.0.0
