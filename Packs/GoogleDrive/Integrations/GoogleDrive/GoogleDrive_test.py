@@ -824,7 +824,7 @@ class TestFilePermissionMethods:
 
         assert 'modifiedLabels' in result.outputs.get('GoogleDrive.Labels')
         assert result.outputs.get('GoogleDrive.Labels').get('modifiedLabels')[0].get('id') \
-            == 'vFmXsMA1fQMz1BdE59YSkisZV4DiKdpxxLQRNNEbbFcb'
+               == 'vFmXsMA1fQMz1BdE59YSkisZV4DiKdpxxLQRNNEbbFcb'
 
         assert result.raw_response == mock_response
 
@@ -1084,3 +1084,32 @@ class TestFilePermissionMethods:
                     'user_id': 'test_user_id',
                 }
             )
+
+    @patch(MOCKER_HTTP_METHOD)
+    def test_drive_get_file_get_parents_success(self, mocker_http_request, gsuite_client):
+        """
+        Scenario: For file_get_parents command successful run.
+
+        Given:
+        - Command args.
+
+        When:
+        - Calling google-drive-drive-get command with the parameters provided.
+
+        Then:
+        - Ensure command's raw_response, outputs should be as expected.
+        """
+        from GoogleDrive import file_get_parents
+
+        with open('test_data/get_parents_list.txt', encoding='utf-8') as data:
+            mock_response = json.load(data)
+        mocker_http_request.return_value = mock_response
+
+        args = {
+            'use_domain_admin_access': True
+        }
+        result = file_get_parents(gsuite_client, args)
+
+        assert 'GoogleDrive.File' in result.outputs
+        assert len(result.outputs.get('GoogleDrive.File').get('Parents')) == 1
+        assert result.raw_response == mock_response

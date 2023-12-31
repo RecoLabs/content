@@ -160,7 +160,6 @@ OUTPUT_PREFIX: dict[str, str] = {
     'FILE_PERMISSION': 'FilePermission',
 
     'LABELS': 'GoogleDrive.Labels',
-    
     'PARENTS': 'GoogleDrive.File.Parents'
 
 }
