@@ -1061,29 +1061,14 @@ def file_get_command(client: 'GSuiteClient', args: dict[str, str]) -> CommandRes
 @logger
 def file_get_parents(client: 'GSuiteClient', args: dict[str, str]) -> CommandResults:
     """
-    google-drive-file-get
-    Query a single file in Google Drive.
+    google-drive-get-file-parents
+    Query a single file in Google Drive to retrieve its parents.
 
     :param client: Client object.
     :param args: Command arguments.
 
     :return: Command Result.
     """
-
-    return file_get_parents_recursive(client, args)
-
-
-def file_get_parents_recursive(client: 'GSuiteClient', args: dict[str, str]) -> CommandResults:
-    """
-    file_get_parents_recursive
-    Get list of parents of a file recursively.
-
-    :param client: Client object.
-    :param args: Command arguments.
-
-    :return: Command Result.
-    """
-
     # Specific file
     is_root = False
     parents = []
@@ -1111,6 +1096,7 @@ def file_get_parents_recursive(client: 'GSuiteClient', args: dict[str, str]) -> 
         readable_output=f"Parents of file {args.get('file_id')} are {parents}",
         raw_response=response,
     )
+
 
 def handle_response_files_list(response: dict[str, Any]) -> CommandResults:
     outputs_context = []

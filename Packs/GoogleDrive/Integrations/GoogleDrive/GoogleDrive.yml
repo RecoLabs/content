@@ -3076,7 +3076,7 @@ script:
     - contextPath: GoogleDrive.File.File.mimeType
       description: The MIME type of the copied file.
       type: String
-  - name: google-drive-file-get-parents
+  - name: google-drive-get-file-parents
     description: Get parents of a Google Drive file.
     arguments:
     - name: file_id
