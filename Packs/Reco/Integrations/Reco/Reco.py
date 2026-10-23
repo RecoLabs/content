@@ -137,11 +137,17 @@ class RecoClient(BaseClient):
         filters: str = "",
         count: int = PAGE_SIZE,
         start_index: int = 0,
+        sort_by: str = "",
+        sort_order: str = "",
     ) -> dict[str, Any]:
-        """GET /external-api/{endpoint} with SCIM filter and pagination params."""
+        """GET /external-api/{endpoint} with SCIM filter, sort, and pagination params."""
         params: dict[str, Any] = {"count": count, "startIndex": start_index}
         if filters:
             params["filters"] = filters
+        if sort_by:
+            params["sortBy"] = sort_by
+        if sort_order:
+            params["sortOrder"] = sort_order
         return self._rate_limited_request(
             method="GET",
             url_suffix=f"{EXTERNAL_API_BASE}/{endpoint}",
@@ -213,21 +219,30 @@ class RecoClient(BaseClient):
         before: datetime | None = None,
         after: datetime | None = None,
         limit: int = PAGE_SIZE,
+        start_index: int = 0,
     ) -> list[dict[str, Any]]:
-        """List threat alerts via the external API.
+        """List threat alerts via the external API, oldest first.
 
         risk_levels: list of severity names, e.g. ["HIGH", "CRITICAL"].  Multiple
         values are combined with OR so a single call fetches all matching severities.
+
+        API errors are raised rather than swallowed, so a failed call is never mistaken
+        for "no new alerts" and shows up as a failure in XSOAR.
+
+        Sorted ascending by createdAt (rather than the API's default descending order) so
+        that fetch_incidents can page through a burst via `start_index` without ever
+        skipping alerts, regardless of how many share the same fetch window.
+
+        Preview-state alerts are always excluded: a Policy in Preview state is explicitly
+        meant to stay out of the customer's SOAR/ticketing systems while it's being
+        evaluated (the webhook and share-service paths already enforce this upstream).
         """
-        filter_parts: list[str] = []
+        filter_parts: list[str] = ['status ne "ALERT_STATUS_PREVIEW"']
 
         if risk_levels:
-            if len(risk_levels) == 1:
-                filter_parts.append(f'severity eq "{risk_levels[0]}"')
-            else:
-                # Use the SCIM `in` operator - cleaner than a chain of OR clauses
-                vals = ", ".join(f'"{r}"' for r in risk_levels)
-                filter_parts.append(f"severity in [{vals}]")
+            # `eq` clauses joined with `or` - the External API rejects the SCIM `in` operator (HTTP 500).
+            severity_clauses = " or ".join(f'severity eq "{r}"' for r in risk_levels)
+            filter_parts.append(f"({severity_clauses})" if len(risk_levels) > 1 else severity_clauses)
 
         if source:
             filter_parts.append(f'apps co "{source}"')
@@ -239,14 +254,17 @@ class RecoClient(BaseClient):
         scim_filter = " and ".join(filter_parts)
         demisto.debug(f"get_alerts SCIM filter: {scim_filter!r}")
 
-        try:
-            response = self._external_api_list("alerts/list", filters=scim_filter, count=limit)
-            alerts = response.get("alerts", [])
-            demisto.info(f"get_alerts: fetched {len(alerts)} alerts (total={response.get('totalResults', '?')})")
-            return alerts
-        except Exception as e:
-            demisto.error(f"get_alerts error: {str(e)}")
-            return []
+        response = self._external_api_list(
+            "alerts/list",
+            filters=scim_filter,
+            count=limit,
+            start_index=start_index,
+            sort_by="createdAt",
+            sort_order="ascending",
+        )
+        alerts = response.get("alerts", [])
+        demisto.info(f"get_alerts: fetched {len(alerts)} alerts (total={response.get('totalResults', '?')})")
+        return alerts
 
     def get_single_alert(self, alert_id: str) -> dict[str, Any]:
         """Get full alert detail including policy violations via the external API."""
@@ -823,10 +841,14 @@ class RecoClient(BaseClient):
 
     # --- API key validation ---
 
-    def validate_api_key(self) -> str:
-        """Validate the API token by making a minimal external API call."""
+    def validate_api_key(self, risk_levels: list[str] | None = None) -> str:
+        """Validate the API token with the same alerts query fetch-incidents sends.
+
+        Going through get_alerts (rather than an unfiltered call) means a filter the API
+        rejects fails the Test button instead of only surfacing later during fetch.
+        """
         try:
-            self._external_api_list("alerts/list", count=1)
+            self.get_alerts(risk_levels=risk_levels, limit=1)
             return "ok"
         except Exception as e:
             demisto.error(f"validate_api_key error: {str(e)}")
@@ -893,12 +915,14 @@ def get_alerts(
     before: datetime | None = None,
     after: datetime | None = None,
     limit: int = PAGE_SIZE,
-) -> list[Any]:
+    start_index: int = 0,
+) -> tuple[list[Any], int]:
     """Fetch alert summaries then enrich each with full detail (policy violations).
 
-    Returns a list of ThreatAlertDetail dicts from the external API.
+    Returns the enriched ThreatAlertDetail dicts alongside the raw page size, so callers
+    can tell whether the page was truncated by `limit` (more alerts may remain).
     """
-    raw_alerts = reco_client.get_alerts(risk_levels, source, before, after, limit)
+    raw_alerts = reco_client.get_alerts(risk_levels, source, before, after, limit, start_index)
     alerts_data: list[Any] = []
 
     for raw in raw_alerts:
@@ -925,7 +949,7 @@ def get_alerts(
             demisto.error(f"Failed to enrich alert {alert_id}: {str(e)}")
 
     demisto.info(f"get_alerts: enriched {len(alerts_data)}/{len(raw_alerts)} alerts")
-    return alerts_data
+    return alerts_data, len(raw_alerts)
 
 
 # --- Score mapping ---
@@ -1017,8 +1041,9 @@ def fetch_incidents(
     last_run_time = last_run.get("lastRun", None)
     if last_run_time is not None:
         after = dateutil.parser.parse(last_run_time)
+    start_index = last_run.get("startIndex", 0)
 
-    alerts = get_alerts(reco_client, risk_levels, source, before, after, max_fetch)
+    alerts, raw_page_size = get_alerts(reco_client, risk_levels, source, before, after, max_fetch, start_index)
     incidents = parse_alerts_to_incidents(alerts)
 
     existing_incidents = last_run.get("incident_ids", [])
@@ -1029,12 +1054,22 @@ def fetch_incidents(
         and (incident.get("dbotMirrorId", None) not in existing_incidents)
     ]
 
-    incidents_sorted = sorted(incidents, key=lambda k: k["occurred"])
-    if incidents_sorted:
-        last_occurred_dt = dateutil.parser.parse(incidents_sorted[-1]["occurred"])
-        next_run["lastRun"] = (last_occurred_dt + timedelta(seconds=1)).strftime(DEMISTO_OCCURRED_FORMAT)
+    if raw_page_size < max_fetch:
+        # The window is fully drained - safe to advance the timestamp cursor.
+        incidents_sorted = sorted(incidents, key=lambda k: k["occurred"])
+        if incidents_sorted:
+            last_occurred_dt = dateutil.parser.parse(incidents_sorted[-1]["occurred"])
+            next_run["lastRun"] = (last_occurred_dt + timedelta(seconds=1)).strftime(DEMISTO_OCCURRED_FORMAT)
+        else:
+            next_run["lastRun"] = last_run_time
+        next_run["startIndex"] = 0
     else:
+        # The page was full - more alerts may remain in this window. Keep lastRun in place
+        # and resume from start_index next cycle, so a burst larger than max_fetch is
+        # drained over multiple cycles instead of the excess being permanently skipped.
         next_run["lastRun"] = last_run_time
+        next_run["startIndex"] = start_index + raw_page_size
+
     next_run["incident_ids"] = existing_incidents + [inc["dbotMirrorId"] for inc in incidents]
 
     return next_run, incidents
@@ -1677,7 +1712,7 @@ def main() -> None:  # pragma: no cover
             return_results(CommandResults(raw_response=response, readable_output=f"Visibility event {entity_id} resolved"))
 
         elif command == "test-module":
-            return_results(reco_client.validate_api_key())
+            return_results(reco_client.validate_api_key(parse_minimum_risk_level(params.get("risk_level"))))
 
         elif command == "reco-get-risky-users":
             return_results(get_risky_users_from_reco(reco_client))

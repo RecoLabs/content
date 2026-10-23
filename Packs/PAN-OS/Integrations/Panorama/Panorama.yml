@@ -4071,6 +4071,13 @@ script:
     - description: The tag for the new address.
       isArray: true
       name: tag
+    - auto: PREDEFINED
+      description: Whether to create the tag if it does not exist.
+      defaultValue: 'false'
+      name: create_tag
+      predefined:
+      - 'true'
+      - 'false'
     description: Creates an address object.
     name: pan-os-create-address
     outputs:
@@ -10812,7 +10819,7 @@ script:
     - contextPath: Panorama.Certificate.devices_using_certificate
       type: Unknown
       description: List of devices using this certificate if it was pushed from Panorama.
-  dockerimage: demisto/pan-os-python:1.0.0.10133006
+  dockerimage: demisto/pan-os-python:1.0.0.13538236
   isfetch: true
   runonce: false
   script: ''
